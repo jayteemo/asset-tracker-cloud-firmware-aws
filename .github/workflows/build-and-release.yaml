@@ -17,10 +17,6 @@ on:
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
   STACK_NAME: ${{ secrets.STACK_NAME }}
   CI: 1
   FORCE_COLOR: 3
@@ -54,23 +50,6 @@ jobs:
         id: dateAsString
         run: echo "::set-output name=dateAsString::$(date +'%Y%m%d%H%M%S')"
 
-  broker:
-    name: Determine broker hostname
-    runs-on: ubuntu-latest
-    steps:
-      - name: Determine the AWS IoT broker hostname
-        id: broker-hostname
-        run: |
-          BROKER_HOSTNAME=`AWS_ACCESS_KEY_ID=${{ env.AWS_ACCESS_KEY_ID }} AWS_SECRET_ACCESS_KEY=${{ env.AWS_SECRET_ACCESS_KEY }} AWS_DEFAULT_REGION=${{ env.AWS_REGION }} aws iot describe-endpoint --endpoint-type iot:Data-ATS | jq '.endpointAddress' -r | tr -d '\n'`
-          echo ${BROKER_HOSTNAME}
-          if [ -z "$BROKER_HOSTNAME" ]; then echo "Failed to discover broker hostname."; exit 1; fi
-          echo ${BROKER_HOSTNAME} > broker.conf
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: broker
-          path: broker.conf
-
   release-version:
     name: Determine next release version
 
@@ -94,7 +73,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    needs: [broker, release-version, date-string]
+    needs: [release-version, date-string]
 
     strategy:
       matrix:
@@ -111,15 +90,6 @@ jobs:
           APP_VERSION=${{ needs.release-version.outputs.nextRelease }}-${{ matrix.board }}-${{ matrix.loglevel }}
           echo "CONFIG_ASSET_TRACKER_V2_APP_VERSION=\"${APP_VERSION}\"" >> firmware/firmware.conf
           echo "APP_VERSION=${APP_VERSION}" >> $GITHUB_ENV
-
-      - uses: actions/download-artifact@v3
-        with:
-          name: broker
-
-      - name: Configure the AWS IoT broker hostname
-        run: |
-          BROKER_HOSTNAME=`cat broker.conf`
-          echo "CONFIG_AWS_IOT_BROKER_HOST_NAME=\"${BROKER_HOSTNAME}\"" >> firmware/firmware.conf
 
       - run: cat firmware/firmware.conf
 
