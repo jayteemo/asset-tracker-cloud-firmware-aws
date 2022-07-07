@@ -78,9 +78,13 @@ jobs:
     strategy:
       matrix:
         board: [thingy91_nrf9160_ns, nrf9160dk_nrf9160_ns]
-        loglevel: [debug, nodebug]
-        project: [atv2, mmss]
-        stage: [dev, beta, prod]
+        loglevel: [debug]
+        #loglevel: [debug, nodebug]
+        project: [atv2]
+        #project: [atv2, mmss]
+        #stage: [dev, beta, prod]
+        stage: [prod]
+        idtype: [imei, uuid]
 
     steps:
       - uses: actions/checkout@v3
@@ -91,12 +95,24 @@ jobs:
         run: |
           touch firmware/firmware.conf
 
+      - name: Set build path
+        run: |
+          ITEM_NAME=${{ matrix.project }}-${{ matrix.idtype }}-${{ matrix.board }}-${{ matrix.stage }}-${{ matrix.loglevel }}
+          BUILD_PATH=_build/$ITEM_NAME
+          echo $BUILD_PATH
+
       - name: Configure Version
         if: matrix.project == 'atv2'
         run: |
           APP_VERSION=${{ needs.release-version.outputs.nextRelease }}-${{ matrix.board }}-${{ matrix.loglevel }}
           echo "CONFIG_ASSET_TRACKER_V2_APP_VERSION=\"${APP_VERSION}\"" >> firmware/firmware.conf
           echo "APP_VERSION=${APP_VERSION}" >> $GITHUB_ENV
+
+      - name: Configure UUID Device ID
+        if: matrix.idtype == 'uuid'
+        run: |
+          echo "CONFIG_MODEM_JWT=y" >> firmware/firmware.conf
+          echo "CONFIG_NRF_CLOUD_CLIENT_ID_SRC_INTERNAL_UUID=y" >> firmware/firmware.conf
 
       - name: Configure MMSS Log Level
         if: matrix.loglevel == 'debug' && matrix.project == 'mmss'
@@ -127,6 +143,7 @@ jobs:
           docker run --rm -v ${PWD}:/workdir/project nordicplayground/nrfconnect-sdk:main \
             /bin/bash -c 'cd firmware && west init -l && west update --narrow -o=--depth=1 && \
             west build -p always -b ${{ matrix.board }} ../nrf/samples/nrf9160/nrf_cloud_mqtt_multi_service \
+            -d ./$BUILD_PATH \
             -- -DOVERLAY_CONFIG="/workdir/project/firmware/firmware.conf"'
 
       - name: Build ATv2
@@ -135,22 +152,22 @@ jobs:
           docker run --rm -v ${PWD}:/workdir/project nordicplayground/nrfconnect-sdk:main \
             /bin/bash -c 'cd firmware && west init -l && west update --narrow -o=--depth=1 && \
             west build -p always -b ${{ matrix.board }} ../nrf/applications/asset_tracker_v2 \
+            -d ./$BUILD_PATH \
             -- -DOVERLAY_CONFIG="/workdir/project/firmware/firmware.conf"'
 
       - name: Copy firmware
         run: |
-          cp firmware/build/zephyr/merged.hex ./
-          cp firmware/build/zephyr/app_signed.hex ./
-          cp firmware/build/zephyr/app_update.bin ./
-          cp firmware/build/zephyr/zephyr.elf ./
+          cp firmware/$BUILD_PATH/zephyr/merged.hex ./
+          cp firmware/$BUILD_PATH/zephyr/app_signed.hex ./
+          cp firmware/$BUILD_PATH/zephyr/app_update.bin ./
+          cp firmware/$BUILD_PATH/zephyr/zephyr.elf ./
           cp firmware/firmware.conf ./
           rm firmware/firmware.conf
 
       - uses: actions/upload-artifact@v3
         with:
           name:
-            ${{ matrix.project }}-${{ matrix.board }}-${{ matrix.loglevel }}-${{
-            needs.date-string.outputs.dateAsString }}-${{ github.sha }}
+            ${{ matrix.project }}-${{ matrix.idtype }}-${{ matrix.board }}-${{ matrix.stage }}-${{ matrix.loglevel }}-${{needs.date-string.outputs.dateAsString }}-${{ github.sha }}
           path: |
             merged.hex
             app_signed.hex
