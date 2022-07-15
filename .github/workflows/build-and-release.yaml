@@ -82,8 +82,7 @@ jobs:
         #loglevel: [debug, nodebug]
         project: [atv2]
         #project: [atv2, mmss]
-        #stage: [dev, beta, prod]
-        stage: [prod]
+        stage: [dev, beta, prod]
         idtype: [imei, uuid]
 
     steps:
